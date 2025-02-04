@@ -1,16 +1,23 @@
+import sys
+import os
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
+
 # tests/test_chess_game.py
 import unittest
 import chess
 import tkinter as tk
 from unittest.mock import MagicMock, patch
-from chess_game import ChessGame
+from api.chess_game import ChessGame
 
 class TestChessGame(unittest.TestCase):
     def setUp(self):
         # Instantiate ChessGame and withdraw the Tkinter window to avoid GUI pop-ups.
         self.game = ChessGame()
         self.game.window.withdraw()  # Hide the window during tests
-        self.game.board.reset()      # Ensure the board is in the initial state
+        self.game.board.reset()       # Ensure the board is in the initial state
+        
+        # Ensure the board (and its buttons) is created.
+        self.game.create_board()
 
     def tearDown(self):
         # Destroy the Tkinter window after each test.
@@ -46,8 +53,13 @@ class TestChessGame(unittest.TestCase):
         """Test that the AI move changes the turn on the board."""
         self.game.board.reset()
         current_turn = self.game.board.turn
+        # Skip this test if no engine is available.
+        if self.game.engine is None:
+            self.skipTest("Stockfish engine not available.")
+        # Override window.after so that callbacks execute immediately.
+        self.game.window.after = lambda delay, func: func()
         self.game.make_ai_move()
-        # After the AI makes a move, the board turn should switch.
+        # After the AI move, the board turn should have switched.
         self.assertNotEqual(
             self.game.board.turn, 
             current_turn, 
@@ -81,15 +93,18 @@ class TestChessGame(unittest.TestCase):
             "Difficulty should be set to 'easy'."
         )
 
-    @patch.object(ChessGame, 'generate_riddle')
-    def test_square_clicked_and_ai_move(self, mock_generate_riddle):
+    @patch.object(ChessGame, 'generate_player_hint')
+    def test_square_clicked_and_ai_move(self, mock_generate_player_hint):
         """
         Simulate a player's move by clicking on a square with a white piece (selecting it)
         and then clicking on a destination square to complete a legal move.
-        Verify that after the move, the AI's riddle generation is triggered.
+        Verify that after the move, the AI's hint generation is triggered.
         """
+        # Override window.after so that scheduled callbacks occur immediately.
+        self.game.window.after = lambda delay, func: func()
+        
         # For the initial board, white's pawn at a2 is present.
-        # In our mapping, a2 corresponds to row=6, col=0.
+        # In our mapping, a2 corresponds to row 6, col 0.
         self.game.square_clicked(6, 0)
         self.assertIsNotNone(
             self.game.selected_square, 
@@ -97,13 +112,13 @@ class TestChessGame(unittest.TestCase):
         )
         
         # For a pawn on a2, a forward move to a3 should be legal.
-        # a3 corresponds to row=5, col=0.
+        # a3 corresponds to row 5, col 0.
         self.game.square_clicked(5, 0)
         self.assertIsNone(
             self.game.selected_square, 
             "After completing a move, selected_square should be reset."
         )
-        mock_generate_riddle.assert_called_once()
+        mock_generate_player_hint.assert_called_once()
 
     def test_update_board_display(self):
         """
@@ -120,9 +135,7 @@ class TestChessGame(unittest.TestCase):
             self.game.create_board()
         self.game.update_board_display()
         
-        # In the mapping, e1 (chess.E1) is at index 4.
-        # With the update_board_display mapping: square = (7 - row)*8 + col,
-        # e1 should be in the button at row 7, column 4.
+        # Mapping: square = (7 - row) * 8 + col. For e1 (square 4), row 7, col 4.
         row, col = 7, 4
         button_text = self.game.buttons[row][col].cget("text")
         self.assertEqual(
@@ -131,26 +144,24 @@ class TestChessGame(unittest.TestCase):
             "The button corresponding to e1 should display the white king symbol."
         )
 
-    def test_generate_riddle(self):
+    def test_generate_player_hint(self):
         """
-        Test the generate_riddle function by mocking the Anthropic API call.
-        This test ensures that after a move, the hint_text widget is updated with the generated riddle.
+        Test the generate_player_hint function by mocking the Anthropic API call.
+        This test ensures that after calling generate_player_hint, the hint_text widget is updated with the generated riddle.
         """
         # Create a dummy response to simulate the Anthropic API.
         dummy_message = MagicMock()
-        # Create a dummy object to simulate the content element with a text attribute.
-        DummyContent = type("DummyContent", (), {"text": "Test riddle"})  
-        dummy_message.content = [DummyContent()]
+        # Use MagicMock to simulate a content element with a 'text' attribute.
+        dummy_message.content = [MagicMock(text="Test riddle")]
         
         # Set the Anthropic API client to a dummy object.
         self.game.anthropic = MagicMock()
         self.game.anthropic.messages.create.return_value = dummy_message
         
-        # Set the difficulty (affects the prompt generated).
+        # Set the difficulty (which affects the prompt generated).
         self.game.difficulty = "easy"
-        # Use a legal move from the current board.
-        move = list(self.game.board.legal_moves)[0]
-        self.game.generate_riddle(move)
+        # Call generate_player_hint (no arguments needed).
+        self.game.generate_player_hint()
         
         # Retrieve the text from the hint_text widget.
         riddle_text = self.game.hint_text.get("1.0", tk.END).strip()
