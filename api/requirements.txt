@@ -1,0 +1,10 @@
+#requirements.txt
+# System requirements:
+# - Stockfish chess engine (Mac: brew install stockfish, Linux: apt-get install stockfish)
+
+Pillow>=8.0,<11.0
+chess>=1.9.4
+anthropic>=0.5.0
+tkfontchooser>=2.0.0
+markupsafe~=2.0
+svglib>=1.5.1
